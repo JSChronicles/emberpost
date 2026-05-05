@@ -1,0 +1,29 @@
+id: test-multi-goalie-oncall
+schedule: weekly
+
+pagerduty:
+  tenant: example.pagerduty.com
+  schedule_groups:
+    PLATFORM:
+      slack_group_id: S0123456789
+      entries:
+        - schedule_id: PEXAMPLE1
+          label: "Platform Primary"
+        - schedule_id: PEXAMPLE2
+          label: "Platform Secondary"
+        - schedule_id: PEXAMPLE3
+          label: "Deploy Support"
+    DATABASE:
+      slack_group_id: S9876543210
+      swap_on_odd_weeks: true
+      entries:
+        - schedule_id: PEXAMPLE4
+          label: "Database Primary"
+        - schedule_id: PEXAMPLE5
+          label: "Database Escalation"
+
+slack:
+  slack_space: example.slack.com
+  slack_channel_id: C0123456789
+  set_channel_topic: true
+

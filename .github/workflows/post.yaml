@@ -1,0 +1,85 @@
+name: post
+
+on:
+  workflow_dispatch:
+    inputs:
+      frequency:
+        type: choice
+        required: true
+        default: daily
+        options:
+          - daily
+          - weekly
+  schedule:
+    - cron: "30 9 * * MON-FRI" # weekdays at 09:30
+      timezone: "America/Chicago"
+    - cron: "30 10 * * MON" # Mondays at 10:30
+      timezone: "America/Chicago"
+
+env:
+  FREQUENCY: ${{ (endsWith(github.event.schedule, 'MON-FRI') || github.event.inputs.frequency == 'daily') && 'daily' || 'weekly' }}
+
+permissions:
+  contents: read
+
+jobs:
+  post-to-slack:
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.14-slim
+    env:
+      PYTHONPATH: src
+      PAGERDUTY_API_KEY_BUSINESS1_PAGERDUTY_COM: ${{ secrets.PAGERDUTY_API_KEY_BUSINESS1_PAGERDUTY_COM }}
+      SLACK_API_KEY_BUSINESS1SPACE_SLACK_COM: ${{ secrets.SLACK_API_KEY_BUSINESS1SPACE_SLACK_COM }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+
+      - name: Slack post
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          for schedule_file in schedules/*.yaml; do
+            echo "Processing ${schedule_file}"
+            uv run emberpost \
+              --schedule-file "${schedule_file}" \
+              --frequency "${FREQUENCY}"
+          done
+
+      - name: Slack post (dry run on non-main)
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: uv run emberpost --schedule-file tests/schedules/test-oncall.yaml --frequency weekly --dry-run
+
+      # - name: Notify Slack on failure
+      #   if: ${{ failure() }}
+      #   uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
+      #   with:
+      #     token: ${{ secrets.SLACK_BOT_TOKEN }}
+      #     method: chat.postMessage
+      #     errors: "true"
+      #     payload: |
+      #       channel: ${{ secrets.SLACK_CHANNEL_ID }}
+      #       text: ":x: emberpost post failed"
+      #       blocks:
+      #         - type: section
+      #           text:
+      #             type: mrkdwn
+      #             text: |
+      #               :x: *emberpost post failed*
+      #               Frequency: `${{ env.FREQUENCY }}`
+      #         - type: actions
+      #           elements:
+      #             - type: button
+      #               text:
+      #                 type: plain_text
+      #                 text: "View run"
+      #                 emoji: true
+      #               url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

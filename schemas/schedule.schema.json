@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://emberpost.local/schemas/schedule.schema.json",
+  "title": "On-Call Dispatch Schedule Configuration",
+  "description": "Declarative configuration for resolving PagerDuty on-call schedules and publishing them to Slack.",
+  "$defs": {
+    "Frequency": {
+      "enum": [
+        "daily",
+        "weekly",
+        "manual"
+      ],
+      "title": "Frequency",
+      "type": "string"
+    },
+    "PagerDutyConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "tenant": {
+          "description": "PagerDuty tenant hostname. This maps to an environment variable named PAGERDUTY_API_KEY_<TENANT>, with dots replaced by underscores.",
+          "examples": [
+            "Business.pagerduty.com"
+          ],
+          "pattern": "^[A-Za-z0-9.-]+\\.pagerduty\\.com$",
+          "title": "Tenant",
+          "type": "string"
+        },
+        "schedule_groups": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PagerDutyScheduleGroup"
+          },
+          "description": "Slack output sections keyed by group name. Each group contains one or more PagerDuty schedule entries and optional group-level Slack routing.",
+          "minProperties": 1,
+          "title": "Schedule Groups",
+          "type": "object"
+        }
+      },
+      "required": [
+        "tenant",
+        "schedule_groups"
+      ],
+      "title": "PagerDutyConfig",
+      "type": "object"
+    },
+    "PagerDutyScheduleGroup": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "swap_on_odd_weeks": {
+                "const": true
+              }
+            },
+            "required": [
+              "swap_on_odd_weeks"
+            ]
+          },
+          "then": {
+            "properties": {
+              "entries": {
+                "maxItems": 2,
+                "minItems": 2
+              }
+            }
+          }
+        }
+      ],
+      "description": "A Slack output section with one or more PagerDuty schedules and optional Slack user group sync.",
+      "properties": {
+        "slack_group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional Slack user group ID to update with the resolved users for this schedule group.",
+          "examples": [
+            "S0123456789"
+          ],
+          "title": "Slack Group Id"
+        },
+        "swap_on_odd_weeks": {
+          "default": false,
+          "description": "When true, swap the two entries in this group during odd ISO week numbers. Only valid when the group has exactly two entries.",
+          "title": "Swap On Odd Weeks",
+          "type": "boolean"
+        },
+        "entries": {
+          "$ref": "#/$defs/PagerDutyScheduleEntries"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "title": "PagerDutyScheduleGroup",
+      "type": "object"
+    },
+    "PagerDutyScheduleEntries": {
+      "description": "One or more PagerDuty schedules to resolve for this Slack section.",
+      "items": {
+        "$ref": "#/$defs/PagerDutyScheduleEntry"
+      },
+      "minItems": 1,
+      "title": "PagerDutyScheduleEntries",
+      "type": "array"
+    },
+    "PagerDutyScheduleEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "schedule_id": {
+          "description": "PagerDuty schedule ID to query for the current on-call user.",
+          "examples": [
+            "PDRI0N4"
+          ],
+          "minLength": 1,
+          "title": "Schedule Id",
+          "type": "string"
+        },
+        "label": {
+          "description": "Human-readable label used in the Slack message or channel topic.",
+          "examples": [
+            "DBRE Primary"
+          ],
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schedule_id",
+        "label"
+      ],
+      "title": "PagerDutyScheduleEntry",
+      "type": "object"
+    },
+    "SlackConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "slack_space": {
+          "description": "Slack workspace hostname. This maps to an environment variable named SLACK_API_KEY_<WORKSPACE>, with dots replaced by underscores.",
+          "examples": [
+            "business.slack.com"
+          ],
+          "pattern": "^[A-Za-z0-9.-]+\\.slack\\.com$",
+          "title": "Slack Space",
+          "type": "string"
+        },
+        "slack_channel_id": {
+          "description": "Slack channel ID to update or post to.",
+          "examples": [
+            "C09K68TPB7X"
+          ],
+          "minLength": 1,
+          "title": "Slack Channel Id",
+          "type": "string"
+        },
+        "set_channel_topic": {
+          "default": false,
+          "description": "When true, update the Slack channel topic. When false, post a normal Slack channel message.",
+          "title": "Set Channel Topic",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "slack_space",
+        "slack_channel_id"
+      ],
+      "title": "SlackConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Stable identifier for this schedule configuration.",
+      "examples": [
+        "pre-oncall"
+      ],
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "schedule": {
+      "$ref": "#/$defs/Frequency",
+      "description": "Cadence this file should run for. The CLI --frequency value must match this field unless the file is intentionally skipped."
+    },
+    "suspended": {
+      "default": false,
+      "description": "When true, skip this schedule configuration without making changes.",
+      "title": "Suspended",
+      "type": "boolean"
+    },
+    "pagerduty": {
+      "$ref": "#/$defs/PagerDutyConfig",
+      "description": "PagerDuty tenant and schedule entries to resolve."
+    },
+    "slack": {
+      "$ref": "#/$defs/SlackConfig",
+      "description": "Slack workspace and destination settings."
+    },
+    "message_header": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional text prepended to the rendered Slack message or topic.",
+      "examples": [
+        "Current on-call rotation"
+      ],
+      "title": "Message Header"
+    },
+    "message_footer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional text appended to the rendered Slack message or topic.",
+      "examples": [
+        "Escalate in PagerDuty if immediate help is needed."
+      ],
+      "title": "Message Footer"
+    }
+  },
+  "required": [
+    "id",
+    "schedule",
+    "pagerduty",
+    "slack"
+  ],
+  "type": "object"
+}

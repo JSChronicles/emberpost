@@ -1,0 +1,26 @@
+id: oncall
+schedule: weekly
+
+pagerduty:
+  tenant: business.pagerduty.com
+  schedule_groups:
+    Platform Coverage:
+      slack_group_id: null
+      swap_on_odd_weeks: true
+      entries:
+        - schedule_id: PDORION
+          label: "Primary Responder"
+        - schedule_id: PDKZKTB
+          label: "Backup Responder"
+    Service Coverage:
+      slack_group_id: null
+      entries:
+        - schedule_id: PD9123K
+          label: "Service Lead"
+        - schedule_id: PDZ223R
+          label: "Release Support"
+
+slack:
+  slack_space: business.slack.com
+  slack_channel_id: C0123GFGH
+  set_channel_topic: true

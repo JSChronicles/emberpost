@@ -1,0 +1,22 @@
+{
+  "Schedule config model": {
+    "prefix": "oncall model",
+    "body": [
+      "from pathlib import Path",
+      "",
+      "from emberpost.config import load_schedule",
+      "",
+      "",
+      "config = load_schedule(Path(\"schedules/${1:pre-oncall}.yaml\"))",
+      "print(config.id)"
+    ],
+    "description": "Load an emberpost schedule config"
+  },
+  "Dry run command": {
+    "prefix": "oncall dry-run",
+    "body": [
+      "uv run emberpost --schedule-file schedules/${1:pre-oncall}.yaml --frequency ${2:weekly} --dry-run"
+    ],
+    "description": "Run emberpost in dry-run mode"
+  }
+}

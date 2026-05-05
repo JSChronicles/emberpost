@@ -1,0 +1,33 @@
+name: Validate YAML Schema
+
+on:
+  push:
+    branches:
+    - main
+
+  pull_request:
+    branches:
+    - main
+
+  workflow_dispatch:
+
+jobs:
+  validate-yaml:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.14-slim
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install the project
+        run: uv sync --all-groups
+
+      - name: Validate schedule YAML files against JSON Schema
+        run: uv run check-jsonschema --schemafile schemas/schedule.schema.json schedules/*.yaml examples/*.yaml
