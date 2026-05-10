@@ -4,8 +4,8 @@ on:
   pull_request:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 jobs:
   dependabot:
@@ -15,7 +15,6 @@ jobs:
 
     env:
       PR_URL: ${{ github.event.pull_request.html_url }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Dependabot metadata
@@ -24,14 +23,31 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Create GitHub App token
+        id: app-token
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ secrets.JSCHRONICLES_DEPENDABOT_CLIENT_ID }}
+          private-key: ${{ secrets.JSCHRONICLES_DEPENDABOT_PRIVATE_KEY }}
+          permission-pull-requests: write
+          permission-contents: write
+
       - name: Approve patch and minor updates
         if: |
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
           steps.metadata.outputs.update-type == 'version-update:semver-minor'
         run: gh pr review --approve "$PR_URL"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Enable auto-merge for patch and minor updates
         if: |
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
           steps.metadata.outputs.update-type == 'version-update:semver-minor'
         run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
