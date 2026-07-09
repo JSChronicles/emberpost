@@ -1,8 +1,4 @@
 name: Python Tests
-
-permissions:
-  contents: read
-
 on:
   push:
     branches:
@@ -14,6 +10,9 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
@@ -24,16 +23,20 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
-        with:
-          enable-cache: true
 
-      - name: Install dependencies
+      - name: Install the project
         run: uv sync --all-groups
+
+      - name: Build package
+        run: uv build
 
       - name: Smoke test module entrypoint
         env:
           PYTHONPATH: src
         run: uv run python -m emberpost.post --help
+
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$(pwd)" >> $GITHUB_ENV
 
       - name: Run tests with coverage
         run: uv run pytest

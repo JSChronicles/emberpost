@@ -1,0 +1,53 @@
+name: "Publish"
+
+on:
+  push:
+    tags:
+      - v*
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, e.g. v0.19.1"
+        required: false
+        type: string
+
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to publish, e.g. v0.19.1"
+        required: true
+        type: string
+
+
+jobs:
+  pypi-publish:
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.14-slim
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+
+      - name: Build
+        run: uv build
+
+      # Check that basic features work and we didn't miss to include crucial files
+      # - name: Smoke test (wheel)
+      #   run: uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
+
+      # - name: Smoke test (source distribution)
+      #   run: uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
+
+      - name: Publish
+        run: uv publish
