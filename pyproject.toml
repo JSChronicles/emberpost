@@ -21,8 +21,8 @@ emberpost = "emberpost.post:main"
 [dependency-groups]
 dev = [
   "pytest-cov==7.1.0",
-  "pytest==9.0.3",
-  "prek==0.3.8",
+  "pytest==9.1.1",
+  "prek==0.4.6",
   "check-jsonschema",
   "ruff",
   "ty",
