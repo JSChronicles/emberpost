@@ -22,7 +22,7 @@ emberpost = "emberpost.post:main"
 dev = [
   "pytest-cov==7.1.0",
   "pytest==9.1.1",
-  "prek==0.4.6",
+  "prek==0.4.8",
   "check-jsonschema",
   "ruff",
   "ty",
