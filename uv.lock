@@ -281,14 +281,14 @@ wheels = [
 
 [[package]]
 name = "pagerduty"
-version = "7.0.0"
+version = "7.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/a9/2350041088e69a144bb5248b02f17dc5ad61f5ee341c09546fb8b1c52200/pagerduty-7.0.0.tar.gz", hash = "sha256:e4d644d15033a4ed3fbc77622daafce19fdeb635caaf2279e840d9b0eb51387e", size = 45110, upload-time = "2026-07-15T20:52:17.889Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/84/975ad9f8ceb1df6a4e854428ea49a0e03574d372e468b9c6df2591355e19/pagerduty-7.0.1.tar.gz", hash = "sha256:3c8e8bd0197edb10fdc4c6601ae487e262895de226ac87673a2a4292b71469b4", size = 49476, upload-time = "2026-09-04T19:12:14.643Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5b/c7/86d43b83fe529f68f6ccb48543c84baad872a51101b0c862f0eda5d55c5a/pagerduty-7.0.0-py3-none-any.whl", hash = "sha256:d751528399ec5ec4bdf7e6f6c14ce157e08ba1d1c911bbc416698f1c353d15e8", size = 55817, upload-time = "2026-07-15T20:52:16.663Z" },
+    { url = "https://files.pythonhosted.org/packages/75/83/62c8d6608e3ccb22f5958d0696d93db81b1bef2b45fb38c693f71e12a45a/pagerduty-7.0.1-py3-none-any.whl", hash = "sha256:6fe79cf78a897fae5908321cc8104cba312875b45e29c0a35d40a7d669e65179", size = 60174, upload-time = "2026-09-04T19:12:13.481Z" },
 ]
 
 [[package]]
