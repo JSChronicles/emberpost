@@ -5,6 +5,8 @@
 <!-- PROJECT SHIELDS -->
 [![pytest][pytest-badge]][pytest-url]
 [![ruff][ruff-badge]][ruff-url]
+[![release][release-badge]][release-url]
+[![PyPI][pypi-badge]][pypi-url]
 [![prek][prek-badge]][prek-url]
 
 
@@ -34,45 +36,42 @@ Use it to post an on-call summary, update a channel topic, or keep a Slack user 
 Start with [examples/01-minimal.yaml](examples/01-minimal.yaml) for the smallest working schedule shape, then add channel topics, user groups, headers, or footers as needed.
 
 ## Usage
-1. When using the uv tool, there are several ways to run and install dependencies. Here are a few examples:
-   1. Manual setup (similar to pip-tools):
-      1. Create a Python virtual environment: uv venv or python -m venv .venv
-      1. Activate the virtual environment: .\.venv\Scripts\activate.ps1
-      1. Install dependencies: uv pip install --requirements pyproject.toml
-1. uv sync:
-   1. Sync the project's dependencies with the environment: uv sync
-   1. Activate the virtual environment: .venv\Scripts\activate
-1. uv run:
-   1. Run a command in the project environment.: `uv run example.py <args>`
-      1. uv run emberpost --schedule-file schedules/oncall.yaml --frequency weekly --dry-run
-   1. Note that if you use uv run in a project, i.e. a directory with a pyproject.toml, it will install the current project before running the script.
 
+Install the project and its dependencies with [uv](https://docs.astral.sh/uv/):
 
-- The `--frequency` flag is a guardrail for automation. A schedule file marked `weekly` is skipped when the command runs with `--frequency daily`, which lets daily and weekly jobs share the same command shape.
-- Set `slack.set_channel_topic: true` in the schedule file to update the channel topic instead of posting a message:
+```console
+uv sync
+```
+
+Commands can then be run through `uv run`, which uses the project environment automatically. The `--frequency` flag is an automation guardrail: a `weekly` schedule is skipped during a `daily` run. Set `slack.set_channel_topic: true` to update a channel topic instead of posting a message.
 
 Run a dry run before writing to Slack:
-```python
+
+```console
 uv run emberpost --schedule-file schedules/oncall.yaml --frequency weekly --dry-run
 ```
 
 Run the weekly schedule and update Slack:
-```python
+
+```console
 uv run emberpost --schedule-file schedules/oncall.yaml --frequency weekly
 ```
 
 Process more than one schedule file in a single run:
-```python
+
+```console
 uv run emberpost --schedule-file schedules/oncall.yaml examples/03-full.yaml --frequency weekly
 ```
 
 Run a manual schedule file:
-```python
+
+```console
 uv run emberpost --schedule-file examples/01-minimal.yaml --frequency manual --dry-run
 ```
 
 Run with more logging while troubleshooting:
-```python
+
+```console
 uv run emberpost --schedule-file schedules/oncall.yaml --frequency weekly --dry-run --log-level DEBUG
 ```
 
@@ -90,6 +89,36 @@ pagerduty:
         - schedule_id: PEXAMPLE2
           label: "Backup Responder"
 ```
+
+The top-level `slack` block is the default destination for every schedule group.
+Any group can override `slack_space`, `slack_channel_id`, or
+`set_channel_topic`; values omitted from the group inherit from the top-level
+block:
+
+```yaml
+pagerduty:
+  tenant: example.pagerduty.com
+  schedule_groups:
+    Platform Coverage:
+      entries:
+        - schedule_id: PEXAMPLE1
+          label: "Primary Responder"
+    Database Coverage:
+      slack_space: database-team.slack.com
+      slack_channel_id: C0987654321
+      set_channel_topic: true
+      entries:
+        - schedule_id: PEXAMPLE2
+          label: "Database Responder"
+
+slack:
+  slack_space: example.slack.com
+  slack_channel_id: C0123456789
+  set_channel_topic: false
+```
+
+Here, `Platform Coverage` uses all three top-level defaults. `Database Coverage`
+uses its own workspace and channel and updates that channel's topic.
 
 ## Setting up your Slack Bot
 
@@ -169,6 +198,10 @@ settings:
 [pytest-url]:https://github.com/JSChronicles/emberpost/actions/workflows/pytest.yaml
 [ruff-badge]:https://github.com/JSChronicles/emberpost/actions/workflows/ruff.yaml/badge.svg?branch=main
 [ruff-url]:https://github.com/JSChronicles/emberpost/actions/workflows/ruff.yaml
+[release-badge]:https://github.com/JSChronicles/emberpost/actions/workflows/release.yaml/badge.svg?branch=main
+[release-url]:https://github.com/JSChronicles/emberpost/actions/workflows/release.yaml
+[pypi-badge]:https://img.shields.io/pypi/v/emberpost
+[pypi-url]:https://pypi.org/project/emberpost/
 
 [prek-badge]:https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/j178/prek/master/docs/assets/badge-v0.json
 [prek-url]:https://github.com/j178/prek

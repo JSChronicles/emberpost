@@ -10,6 +10,7 @@
 - [Triaging Issues](#triaging-issues)
 - [Submitting Pull Requests](#submitting-pull-requests)
 - [Writing Commit Messages](#writing-commit-messages)
+- [Release Automation](#release-automation)
 - [Code Review](#code-review)
 - [Coding Style](#coding-style)
 
@@ -75,20 +76,18 @@ For most contributions, after your first pull request is accepted and merged, yo
 - **Follow existing coding style and conventions.** Keep your code consistent with the style, formatting, and conventions in the rest of the code base. When possible, these will be enforced with a linter. Consistency makes it easier to review and modify in the future.
 
 - **Include test coverage.** Add unit tests or UI tests when possible. Follow existing patterns for implementing tests.
+
 ### Test Coverage Expectations
 
-This project enforces a minimum test coverage threshold in CI. Coverage is intended to reflect **confidence in core engine logic**, not exhaustive testing of all infrastructure or third-party integrations. Contributors should focus tests on **decision-making code**, not on replicating external systems or implementation details. Coverage thresholds may evolve as the project stabilizes, but tests should prioritize correctness, clarity, and long-term maintainability over raw percentage.
+This project enforces a minimum test coverage threshold in CI. Coverage is intended to reflect **confidence in Emberpost's scheduling and dispatch behavior**, not exhaustive testing of PagerDuty or Slack themselves. Contributors should focus tests on decision-making code and use lightweight fakes at external API boundaries.
 
 - Core behavior **must be covered**, including:
-  - authentication logic
-  - task resolution and dependency handling
-  - orchestration and control flow
-  - validation semantics
-- Execution plumbing is **intentionally not fully unit-tested**, including:
-  - CLI argument parsing
-  - boto3 / AWS SDK mechanics
-  - threading and concurrency primitives
-  - user-defined task implementations
+  - schedule schema validation and configuration inheritance
+  - schedule frequency and suspension guardrails
+  - PagerDuty on-call resolution
+  - Slack destination routing, rendering, and user-group membership
+  - dry-run behavior and CLI argument parsing
+- External SDK behavior should be covered at Emberpost's adapter boundary without making live API calls.
 
 - **Update the example project** if one exists to exercise any new functionality you have added.
 
@@ -112,9 +111,9 @@ Please [write a great commit message](https://github.blog/developer-skills/githu
 
 Release automation uses conventional commit titles on `main`:
 
-- `fix: correct account filtering` creates a patch release.
-- `feat: add organization resolver cache` creates a minor release.
-- `feat!: change task config shape` or a `BREAKING CHANGE:` footer creates a minor release while the project is still on `0.x.x`.
+- `fix: correct Slack destination routing` creates a patch release.
+- `feat: add schedule-group overrides` creates a minor release.
+- `feat!: change the schedule schema` or a `BREAKING CHANGE:` footer creates a minor release while the project is still on `0.x.x`.
 - `docs:`, `test:`, `chore:`, and other non-release types do not create a release by themselves.
 
 If a pull request is squash-merged, the squash commit title is the title that matters for the release workflow.
@@ -160,6 +159,17 @@ Note the fixed or relevant GitHub issues at the end:
 Resolves: #123
 See also: #456, #789
 ```
+
+## Release Automation
+
+The release workflow runs on `main`, derives the next version from conventional commits, updates the project version and lockfile, creates the release tag, and invokes the reusable PyPI publishing workflow. The repository must be configured with:
+
+- A GitHub App that can write repository contents.
+- Repository secrets named `PYTHON_RELEASE_BOT_CLIENT_ID` and `PYTHON_RELEASE_BOT_PRIVATE_KEY` for that app.
+- A GitHub environment named `pypi` with PyPI trusted publishing configured for this repository and workflow.
+- A baseline `v*` tag matching the version that existed before semantic releases were enabled.
+
+The publishing workflow builds the source distribution and wheel, smoke-tests the installed wheel and packaged schema, and then publishes through PyPI trusted publishing. Emberpost does not publish a container image.
 
 ## Code Review
 
