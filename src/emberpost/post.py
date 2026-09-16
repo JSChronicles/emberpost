@@ -5,13 +5,17 @@ from datetime import date
 from pathlib import Path
 from typing import Protocol
 
+from emberpost.msteams import MSTeamsClient
 from emberpost.pagerduty import PagerDutyClient
 from emberpost.schedule_config import (
+    Destination,
+    DestinationProviderName,
     Frequency,
+    MSTeamsProviderOptions,
     PagerDutyScheduleEntry,
     PagerDutyScheduleGroup,
     ScheduleConfig,
-    SlackConfig,
+    SlackProviderOptions,
     load_schedule,
 )
 from emberpost.slack import SlackClient
@@ -20,7 +24,7 @@ __LOGGER__ = logging.getLogger(__name__)
 
 
 class SlackClientProtocol(Protocol):
-    """Slack client behavior needed to prepare and deliver updates."""
+    """Slack client behavior needed to deliver schedule updates."""
 
     def get_user_id_by_email(self, email: str) -> str:
         """Return the Slack user ID associated with an email address."""
@@ -36,6 +40,14 @@ class SlackClientProtocol(Protocol):
 
     def update_user_group(self, user_group_id: str, user_ids: list[str]) -> None:
         """Replace the members of a Slack user group."""
+        ...
+
+
+class MSTeamsClientProtocol(Protocol):
+    """Microsoft Teams client behavior needed to deliver schedule updates."""
+
+    def post_message(self, message: str) -> None:
+        """Post a message through a Microsoft Teams Workflow webhook."""
         ...
 
 
@@ -65,69 +77,48 @@ class PagerDutyClientProtocol(Protocol):
 
 @dataclass(frozen=True)
 class OnCallAssignment:
-    """Resolved PagerDuty assignment and its effective Slack destination."""
+    """Resolved PagerDuty assignment and its effective destination."""
 
     group_name: str
+    destination: Destination
     slack_group_id: str | None
-    slack: SlackConfig
     schedule: PagerDutyScheduleEntry
     pagerduty_name: str
-    slack_user_id: str | None
+    email: str
 
-    @property
-    def message_line(self) -> str:
-        if self.slack_user_id is None:
-            raise ValueError("Slack user ID is required to render a Slack mention")
-        return f"{self.schedule.label}: <@{self.slack_user_id}>"
-
-    @property
-    def topic_line(self) -> str:
-        return f"{self.schedule.label}: {self.pagerduty_name}"
+    def rendered_line(self, identity: str | None = None) -> str:
+        """Render this assignment with a provider-appropriate identity."""
+        return f"{self.schedule.label}: {identity or self.pagerduty_name}"
 
 
 def collect_assignments(
     config: ScheduleConfig,
     pagerduty_client: PagerDutyClientProtocol,
-    slack_clients: Mapping[str, SlackClientProtocol],
     *,
     today: date | None = None,
 ) -> list[OnCallAssignment]:
-    """Resolve PagerDuty schedules and their Slack user identities."""
+    """Resolve PagerDuty schedules without provider-specific user lookups."""
     today = today or date.today()
     assignments: list[OnCallAssignment] = []
     schedule_ids = [
         schedule.schedule_id
-        for group in config.pagerduty.schedule_groups.values()
+        for group in config.schedule_groups.values()
         for schedule in group.entries
     ]
     oncalls_by_schedule_id = pagerduty_client.get_oncalls(schedule_ids)
-    slack_ids_by_workspace_and_email: dict[tuple[str, str], str] = {}
 
-    for group_name, group in config.pagerduty.schedule_groups.items():
-        slack = group.resolve_slack_config(config.slack)
-        slack_client = slack_clients[slack.slack_space]
+    for group_name, group in config.schedule_groups.items():
+        destination = group.resolve_destination(config.destination)
         for schedule in entries_for_week(group, today):
             oncall = oncalls_by_schedule_id[schedule.schedule_id]
-            email = str(oncall.email)
-            assignment_needs_slack_user = (
-                not slack.set_channel_topic or group.slack_group_id is not None
-            )
-            slack_user_key = (slack.slack_space, email)
-            if (
-                assignment_needs_slack_user
-                and slack_user_key not in slack_ids_by_workspace_and_email
-            ):
-                slack_ids_by_workspace_and_email[slack_user_key] = (
-                    slack_client.get_user_id_by_email(oncall.email)
-                )
             assignments.append(
                 OnCallAssignment(
                     group_name=group_name,
+                    destination=destination,
                     slack_group_id=group.slack_group_id,
-                    slack=slack,
                     schedule=schedule,
                     pagerduty_name=oncall.name,
-                    slack_user_id=slack_ids_by_workspace_and_email.get(slack_user_key),
+                    email=oncall.email,
                 )
             )
 
@@ -143,8 +134,11 @@ def entries_for_week(
     return group.entries
 
 
-def render(assignments: list[OnCallAssignment], *, for_topic: bool) -> str:
-    """Render assignments as a Slack message or channel topic."""
+def render(
+    assignments: list[OnCallAssignment],
+    identities_by_email: Mapping[str, str] | None = None,
+) -> str:
+    """Render assignments using PagerDuty names or provider identities."""
     lines: list[str] = []
     current_group: str | None = None
 
@@ -155,44 +149,50 @@ def render(assignments: list[OnCallAssignment], *, for_topic: bool) -> str:
             lines.append(assignment.group_name)
             current_group = assignment.group_name
 
-        lines.append(assignment.topic_line if for_topic else assignment.message_line)
+        identity = (
+            identities_by_email.get(assignment.email)
+            if identities_by_email is not None
+            else None
+        )
+        lines.append(assignment.rendered_line(identity))
 
     return "\n".join(lines)
 
 
 def slack_user_group_updates(
-    assignments: list[OnCallAssignment],
+    assignments: list[OnCallAssignment], identities_by_email: Mapping[str, str]
 ) -> dict[str, list[str]]:
     """Build deduplicated Slack user-group membership updates."""
     updates: dict[str, list[str]] = {}
     for assignment in assignments:
         if assignment.slack_group_id is None:
             continue
-        if assignment.slack_user_id is None:
-            raise ValueError("Slack user ID is required to update a Slack user group")
+        slack_user_id = identities_by_email[assignment.email]
         user_ids = updates.setdefault(assignment.slack_group_id, [])
-        if assignment.slack_user_id not in user_ids:
-            user_ids.append(assignment.slack_user_id)
+        if slack_user_id not in user_ids:
+            user_ids.append(slack_user_id)
     return updates
 
 
 def _group_assignments_by_destination(
     assignments: list[OnCallAssignment],
-) -> dict[SlackConfig, list[OnCallAssignment]]:
-    """Group assignments by their effective Slack destination."""
-    assignments_by_destination: dict[SlackConfig, list[OnCallAssignment]] = {}
+) -> dict[Destination, list[OnCallAssignment]]:
+    """Group assignments by their effective provider destination."""
+    assignments_by_destination: dict[Destination, list[OnCallAssignment]] = {}
     for assignment in assignments:
-        assignments_by_destination.setdefault(assignment.slack, []).append(assignment)
+        assignments_by_destination.setdefault(assignment.destination, []).append(
+            assignment
+        )
     return assignments_by_destination
 
 
 def _render_destination(
     config: ScheduleConfig,
-    destination: SlackConfig,
     assignments: list[OnCallAssignment],
+    identities_by_email: Mapping[str, str] | None = None,
 ) -> str:
     """Render assignments with the schedule-level header and footer."""
-    rendered = render(assignments, for_topic=destination.set_channel_topic)
+    rendered = render(assignments, identities_by_email)
     if config.message_header:
         rendered = f"{config.message_header}\n{rendered}"
     if config.message_footer:
@@ -200,40 +200,97 @@ def _render_destination(
     return rendered
 
 
-def _dispatch_to_destination(
+def _resolve_slack_identities(
+    assignments: list[OnCallAssignment],
+    options: SlackProviderOptions,
+    slack_client: SlackClientProtocol,
+    cached_user_ids: dict[tuple[str, str], str],
+) -> dict[str, str]:
+    """Resolve the Slack identities needed for messages and user groups."""
+    identities_by_email: dict[str, str] = {}
+    for assignment in assignments:
+        needs_slack_user = (
+            not options.set_channel_topic or assignment.slack_group_id is not None
+        )
+        if not needs_slack_user:
+            continue
+        cache_key = (options.space, assignment.email)
+        if cache_key not in cached_user_ids:
+            cached_user_ids[cache_key] = slack_client.get_user_id_by_email(
+                assignment.email
+            )
+        identities_by_email[assignment.email] = cached_user_ids[cache_key]
+    return identities_by_email
+
+
+def _dispatch_to_slack(
     config: ScheduleConfig,
-    destination: SlackConfig,
+    options: SlackProviderOptions,
     assignments: list[OnCallAssignment],
     slack_client: SlackClientProtocol,
+    cached_user_ids: dict[tuple[str, str], str],
     *,
     dry_run: bool,
 ) -> None:
-    """Deliver one rendered update and its Slack user-group changes."""
-    rendered = _render_destination(config, destination, assignments)
-    user_group_updates = slack_user_group_updates(assignments)
+    """Render and deliver assignments to one Slack destination."""
+    identities_by_email = _resolve_slack_identities(
+        assignments, options, slack_client, cached_user_ids
+    )
+    rendered = _render_destination(
+        config,
+        assignments,
+        (
+            None
+            if options.set_channel_topic
+            else {
+                email: f"<@{slack_user_id}>"
+                for email, slack_user_id in identities_by_email.items()
+            }
+        ),
+    )
+    user_group_updates = slack_user_group_updates(assignments, identities_by_email)
 
     if dry_run:
-        target = "channel topic" if destination.set_channel_topic else "channel message"
+        target = "channel topic" if options.set_channel_topic else "channel message"
         print(
             f"(dry-run) Would update Slack {target} for "
-            f"{destination.slack_channel_id} in {destination.slack_space}:"
+            f"{options.channel_id} in {options.space}:"
         )
         print(rendered)
         for slack_group_id, user_ids in user_group_updates.items():
             print(
                 f"(dry-run) Would update Slack user group "
-                f"{slack_group_id} in {destination.slack_space}: "
-                f"{','.join(user_ids)}"
+                f"{slack_group_id} in {options.space}: {','.join(user_ids)}"
             )
         return
 
-    if destination.set_channel_topic:
-        slack_client.update_channel_topic(destination.slack_channel_id, rendered)
+    if options.set_channel_topic:
+        slack_client.update_channel_topic(options.channel_id, rendered)
     else:
-        slack_client.post_message(destination.slack_channel_id, rendered)
+        slack_client.post_message(options.channel_id, rendered)
 
     for slack_group_id, user_ids in user_group_updates.items():
         slack_client.update_user_group(slack_group_id, user_ids)
+
+
+def _dispatch_to_msteams(
+    config: ScheduleConfig,
+    options: MSTeamsProviderOptions,
+    assignments: list[OnCallAssignment],
+    *,
+    dry_run: bool,
+) -> None:
+    """Render and deliver assignments through a Teams Workflow webhook."""
+    rendered = _render_destination(config, assignments)
+    msteams_client = MSTeamsClient(options.webhook_env)
+    if dry_run:
+        print(
+            f"(dry-run) Would post Microsoft Teams message using {options.webhook_env}:"
+        )
+        print(rendered)
+        return
+
+    msteams_client.post_message(rendered)
 
 
 def dispatch(config: ScheduleConfig, frequency: Frequency, *, dry_run: bool) -> None:
@@ -248,25 +305,33 @@ def dispatch(config: ScheduleConfig, frequency: Frequency, *, dry_run: bool) -> 
         )
         return
 
-    pagerduty_client = PagerDutyClient(config.pagerduty.tenant)
-    slack_spaces = {
-        group.resolve_slack_config(config.slack).slack_space
-        for group in config.pagerduty.schedule_groups.values()
-    }
-    slack_clients = {
-        slack_space: SlackClient(slack_space) for slack_space in sorted(slack_spaces)
-    }
-    assignments = collect_assignments(config, pagerduty_client, slack_clients)
+    assignments = collect_assignments(config, PagerDutyClient(config.pagerduty_tenant))
+    slack_clients: dict[str, SlackClientProtocol] = {}
+    cached_slack_user_ids: dict[tuple[str, str], str] = {}
+
     for destination, destination_assignments in _group_assignments_by_destination(
         assignments
     ).items():
-        _dispatch_to_destination(
-            config,
-            destination,
-            destination_assignments,
-            slack_clients[destination.slack_space],
-            dry_run=dry_run,
-        )
+        if destination.provider.name is DestinationProviderName.slack:
+            options = destination.provider.options
+            if not isinstance(options, SlackProviderOptions):
+                raise TypeError("Slack destination has invalid provider options")
+            if options.space not in slack_clients:
+                slack_clients[options.space] = SlackClient(options.space)
+            _dispatch_to_slack(
+                config,
+                options,
+                destination_assignments,
+                slack_clients[options.space],
+                cached_slack_user_ids,
+                dry_run=dry_run,
+            )
+            continue
+
+        options = destination.provider.options
+        if not isinstance(options, MSTeamsProviderOptions):
+            raise TypeError("Microsoft Teams destination has invalid provider options")
+        _dispatch_to_msteams(config, options, destination_assignments, dry_run=dry_run)
 
 
 def dispatch_schedule_files(

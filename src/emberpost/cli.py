@@ -18,7 +18,7 @@ def _package_version(distribution_name: str) -> str:
 def parse_args() -> argparse.Namespace:
     """Parse Emberpost command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Dispatch PagerDuty on-call schedules to Slack."
+        description="Dispatch PagerDuty on-call schedules to provider destinations."
     )
     parser.add_argument(
         "--version",

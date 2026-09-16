@@ -5,11 +5,15 @@ from emberpost.schedule_config import ScheduleConfig
 
 @dataclass(frozen=True)
 class FakePagerDutyOnCall:
+    """Resolved PagerDuty identity used by tests."""
+
     email: str
     name: str
 
 
 class FakePagerDutyClient:
+    """Record PagerDuty schedule requests and return stable identities."""
+
     def __init__(self) -> None:
         self.requested_schedule_ids: list[list[str]] = []
 
@@ -23,6 +27,8 @@ class FakePagerDutyClient:
 
 
 class FakeSlackClient:
+    """Record Slack reads and writes made by dispatch tests."""
+
     def __init__(self) -> None:
         self.requested_emails: list[str] = []
         self.messages: list[str] = []
@@ -47,26 +53,51 @@ class FakeSlackClient:
         self.user_group_updates.append((user_group_id, user_ids))
 
 
-def fake_slack_clients(
-    config: ScheduleConfig, slack_client: FakeSlackClient
-) -> dict[str, FakeSlackClient]:
+class FakeMSTeamsClient:
+    """Record Microsoft Teams messages made by dispatch tests."""
+
+    def __init__(self, webhook_env: str) -> None:
+        self.webhook_env = webhook_env
+        self.messages: list[str] = []
+
+    def post_message(self, message: str) -> None:
+        self.messages.append(message)
+
+
+def slack_destination(
+    *,
+    space: str = "example.slack.com",
+    channel_id: str = "C123",
+    set_channel_topic: bool = False,
+) -> dict[str, object]:
+    """Return a Slack destination configuration dictionary."""
     return {
-        group.resolve_slack_config(config.slack).slack_space: slack_client
-        for group in config.pagerduty.schedule_groups.values()
+        "provider": {
+            "name": "slack",
+            "options": {
+                "space": space,
+                "channel_id": channel_id,
+                "set_channel_topic": set_channel_topic,
+            },
+        }
     }
 
 
+def msteams_destination(webhook_env: str = "MSTEAMS_WEBHOOK_TEST") -> dict[str, object]:
+    """Return a Microsoft Teams destination configuration dictionary."""
+    return {"provider": {"name": "msteams", "options": {"webhook_env": webhook_env}}}
+
+
 def minimal_config(config_id: str = "test") -> ScheduleConfig:
+    """Return a minimal weekly Slack schedule configuration."""
     return ScheduleConfig.from_dict(
         {
             "id": config_id,
             "schedule": "weekly",
-            "pagerduty": {
-                "tenant": "example.pagerduty.com",
-                "schedule_groups": {
-                    "TEAM": {"entries": [{"schedule_id": "P1", "label": "First"}]}
-                },
+            "destination": slack_destination(),
+            "pagerduty_tenant": "example.pagerduty.com",
+            "schedule_groups": {
+                "TEAM": {"entries": [{"schedule_id": "P1", "label": "First"}]}
             },
-            "slack": {"slack_space": "example.slack.com", "slack_channel_id": "C123"},
         }
     )

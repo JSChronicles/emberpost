@@ -1,14 +1,17 @@
 id: minimal-oncall
 schedule: manual
 
-pagerduty:
-  tenant: example.pagerduty.com
-  schedule_groups:
-    TEAM:
-      entries:
-        - schedule_id: PEXAMPLE1
-          label: "On Call"
+destination:
+  provider:
+    name: slack
+    options:
+      space: example.slack.com
+      channel_id: C0123456789
 
-slack:
-  slack_space: example.slack.com
-  slack_channel_id: C0123456789
+pagerduty_tenant: example.pagerduty.com
+
+schedule_groups:
+  TEAM:
+    entries:
+      - schedule_id: PEXAMPLE1
+        label: "On Call"
