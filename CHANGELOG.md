@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 <!-- version list -->
 
+## v0.3.0 (2026-09-16)
+
+### Chores
+
+- **github-actions**: Bump the github-actions group with 2 updates
+  ([#61](https://github.com/JSChronicles/emberpost/pull/61),
+  [`98cce89`](https://github.com/JSChronicles/emberpost/commit/98cce8922f8546ef785974666c7085e7ac881804))
+
+### Documentation
+
+- Document provider-based destination routing
+  ([`eb850d0`](https://github.com/JSChronicles/emberpost/commit/eb850d0bd7bb98162ed092f0222684b3446d7109))
+
+- **skill**: Update Emberpost provider guidance
+  ([`c2e6c1b`](https://github.com/JSChronicles/emberpost/commit/c2e6c1bd373805bb6c9b89c027ec3ca78711687f))
+
+### Features
+
+- Add provider-based notification destinations
+  ([`b221458`](https://github.com/JSChronicles/emberpost/commit/b2214584f4ff12c4500f8d1354074020c9e08f08))
+
+
 ## v0.2.0 (2026-09-16)
 
 ### Build System
