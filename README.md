@@ -29,9 +29,9 @@
 
 ## Introduction
 
-`emberpost` keeps Slack aligned with the current PagerDuty on-call rotation. It reads a YAML schedule definition, resolves the active on-call users from PagerDuty, maps them to Slack users by email, and then updates the configured Slack channel.
+`emberpost` keeps Slack and Microsoft Teams aligned with the current PagerDuty on-call rotation. It reads a YAML schedule definition, resolves the active on-call users from PagerDuty, and publishes each schedule group to its effective provider destination.
 
-Use it to post an on-call summary, update a channel topic, or keep a Slack user group in sync with the people currently carrying the pager. Schedule files can be marked as `daily`, `weekly`, or `manual`, which makes the same command safe to run from automation while only processing the rotations due for that run.
+Use it to post an on-call summary to Slack or Microsoft Teams, update a Slack channel topic, or keep a Slack user group in sync with the people currently carrying the pager. Schedule files can be marked as `daily`, `weekly`, or `manual`, which makes the same command safe to run from automation while only processing the rotations due for that run.
 
 Start with [examples/01-minimal.yaml](examples/01-minimal.yaml) for the smallest working schedule shape, then add channel topics, user groups, headers, or footers as needed.
 
@@ -43,15 +43,15 @@ Install the project and its dependencies with [uv](https://docs.astral.sh/uv/):
 uv sync
 ```
 
-Commands can then be run through `uv run`, which uses the project environment automatically. The `--frequency` flag is an automation guardrail: a `weekly` schedule is skipped during a `daily` run. Set `slack.set_channel_topic: true` to update a channel topic instead of posting a message.
+Commands can then be run through `uv run`, which uses the project environment automatically. The `--frequency` flag is an automation guardrail: a `weekly` schedule is skipped during a `daily` run. For a Slack provider, set `destination.provider.options.set_channel_topic: true` to update a channel topic instead of posting a message.
 
-Run a dry run before writing to Slack:
+Run a dry run before writing to a destination provider:
 
 ```console
 uv run emberpost --schedule-file schedules/oncall.yaml --frequency weekly --dry-run
 ```
 
-Run the weekly schedule and update Slack:
+Run the weekly schedule and update its configured destinations:
 
 ```console
 uv run emberpost --schedule-file schedules/oncall.yaml --frequency weekly
@@ -75,50 +75,68 @@ Run with more logging while troubleshooting:
 uv run emberpost --schedule-file schedules/oncall.yaml --frequency weekly --dry-run --log-level DEBUG
 ```
 
-Add `slack_group_id` under a schedule group heading to sync that heading's resolved users to a Slack user group:
+The top-level `destination` is used by every schedule group that does not define a complete override. Provider-specific settings live under `provider.options`:
 
 ```yaml
-pagerduty:
-  tenant: example.pagerduty.com
-  schedule_groups:
-    Platform Coverage:
-      slack_group_id: S0123456789
-      entries:
-        - schedule_id: PEXAMPLE1
-          label: "Primary Responder"
-        - schedule_id: PEXAMPLE2
-          label: "Backup Responder"
+pagerduty_tenant: example.pagerduty.com
+
+destination:
+  provider:
+    name: slack
+    options:
+      space: example.slack.com
+      channel_id: C0123456789
+      set_channel_topic: false
+
+schedule_groups:
+  Platform Coverage:
+    entries:
+      - schedule_id: PEXAMPLE1
+        label: "Primary Responder"
 ```
 
-The top-level `slack` block is the default destination for every schedule group.
-Any group can override `slack_space`, `slack_channel_id`, or
-`set_channel_topic`; values omitted from the group inherit from the top-level
-block:
+Add `slack_group_id` to a group using an effective Slack destination to synchronize that group's resolved users to a Slack user group. A group may replace the default with another complete Slack or Microsoft Teams destination:
 
 ```yaml
-pagerduty:
-  tenant: example.pagerduty.com
-  schedule_groups:
-    Platform Coverage:
-      entries:
-        - schedule_id: PEXAMPLE1
-          label: "Primary Responder"
-    Database Coverage:
-      slack_space: database-team.slack.com
-      slack_channel_id: C0987654321
-      set_channel_topic: true
-      entries:
-        - schedule_id: PEXAMPLE2
-          label: "Database Responder"
+pagerduty_tenant: example.pagerduty.com
 
-slack:
-  slack_space: example.slack.com
-  slack_channel_id: C0123456789
-  set_channel_topic: false
+destination:
+  provider:
+    name: slack
+    options:
+      space: example.slack.com
+      channel_id: C0123456789
+      set_channel_topic: false
+
+schedule_groups:
+  Platform Coverage:
+    slack_group_id: S0123456789
+    entries:
+      - schedule_id: PEXAMPLE1
+        label: "Primary Responder"
+  Database Coverage:
+    destination:
+      provider:
+        name: slack
+        options:
+          space: database-team.slack.com
+          channel_id: C0987654321
+          set_channel_topic: true
+    entries:
+      - schedule_id: PEXAMPLE2
+        label: "Database Responder"
+  Incident Coverage:
+    destination:
+      provider:
+        name: msteams
+        options:
+          webhook_env: MSTEAMS_WEBHOOK_INCIDENT
+    entries:
+      - schedule_id: PEXAMPLE3
+        label: "Incident Commander"
 ```
 
-Here, `Platform Coverage` uses all three top-level defaults. `Database Coverage`
-uses its own workspace and channel and updates that channel's topic.
+Here, `Platform Coverage` uses the default Slack destination, `Database Coverage` replaces it with another Slack channel topic, and `Incident Coverage` posts through a Microsoft Teams Workflows webhook.
 
 ## Setting up your Slack Bot
 
@@ -183,13 +201,31 @@ settings:
    1. You’ll receive a Bot User OAuth Token once approved
       1. save this securely.
 
-### Setup GitHub Repository Slack Notification
-1. Create a slack app, if you haven't already
-1. Go to the GitHub repository → Select Settings → select Secrets and variables → Select Actions → Add these three secrets under New repository secret and under Dependabot
-   1. `SLACK_BOT_TOKEN` - This is the authentication token you receive after creating and installing your Slack app. It allows your app to interact with the Slack API and post messages as a bot.
-   1. `SLACK_CHANNEL_ID` - The ID of the primary Slack channel where you want production alerts or notifications to be sent.
-      1. To find a channel ID, right-click on any Slack channel you have access to and select Copy then Copy link. The URL will look something like this: `https://xxxxx.slack.com/archives/Cxxxxx`. The part at the end that starts with a 'C' is the channel ID you’ll need.
-   1. `SLACK_CHANNEL_ID_TEST` - An optional separate channel ID used for testing purposes. It's recommended to use this during development to avoid cluttering your main channel with test messages.
+### Configure Slack credentials
+
+For each configured Slack workspace, uppercase the hostname and replace non-alphanumeric characters with underscores. Store its bot token in the resulting environment variable:
+
+```text
+example.slack.com -> SLACK_API_KEY_EXAMPLE_SLACK_COM
+```
+
+To find a channel ID, copy the Slack channel link. The final path segment beginning with `C` is the channel ID.
+
+## Setting up Microsoft Teams
+
+In Teams, open **Workflows**, search for an incoming-webhook template, and choose the template that posts to your intended channel or chat. Microsoft provides separate templates for channels, chats, and different authentication modes; these Teams webhook templates do not require a premium license. Select **Anyone** as the trigger authentication mode because Emberpost authenticates with the secret webhook URL and does not send an OAuth token. Choose the destination, save the workflow, add co-owners for operational continuity, and copy the generated webhook URL.
+
+Store the URL in the environment variable named by `webhook_env`:
+
+```yaml
+destination:
+  provider:
+    name: msteams
+    options:
+      webhook_env: MSTEAMS_WEBHOOK_INCIDENT
+```
+
+Do not store a Teams webhook URL directly in schedule YAML. Each Teams Workflows webhook is bound to the chat or channel selected in its workflow, so no separate Team or channel ID is required. See Microsoft's [incoming webhook setup guide](https://support.microsoft.com/en-us/workflows/send-messages-in-teams-using-incoming-webhooks) for the current template flow.
 
 
 
