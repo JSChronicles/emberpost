@@ -21,7 +21,7 @@
 
   // YAML schema associations for schedule configs and examples
   "yaml.schemas": {
-    "schemas/schedule.schema.json": [
+    "src/emberpost/schemas/schedule.schema.json": [
       "schedules/*.yaml",
       "schedules/*.yml",
       "examples/*.yaml",
