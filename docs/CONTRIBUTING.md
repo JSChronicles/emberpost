@@ -85,7 +85,7 @@ This project enforces a minimum test coverage threshold in CI. Coverage is inten
   - schedule schema validation and configuration inheritance
   - schedule frequency and suspension guardrails
   - PagerDuty on-call resolution
-  - Slack destination routing, rendering, and user-group membership
+  - provider destination routing, rendering, and Slack user-group membership
   - dry-run behavior and CLI argument parsing
 - External SDK behavior should be covered at Emberpost's adapter boundary without making live API calls.
 

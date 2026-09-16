@@ -1,5 +1,9 @@
+import json
+from urllib.request import Request
+
 import pytest
 
+from emberpost.msteams import MSTeamsClient
 from emberpost.pagerduty import PagerDutyClient
 from emberpost.slack import SlackClient
 
@@ -26,6 +30,17 @@ class RecordingSlackWebClient:
 
     def usergroups_users_update(self, **kwargs: object) -> None:
         self.calls.append(("usergroups_users_update", kwargs))
+
+
+class FakeHTTPResponse:
+    def __init__(self, status: int = 200) -> None:
+        self.status = status
+
+    def __enter__(self) -> "FakeHTTPResponse":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
 
 
 def test_pagerduty_client_missing_api_key_names_tenant(monkeypatch) -> None:
@@ -105,3 +120,52 @@ def test_slack_client_delegates_workspace_operations_to_sdk(monkeypatch) -> None
         ("conversations_setTopic", {"channel": "C456", "topic": "on-call"}),
         ("usergroups_users_update", {"usergroup": "S123", "users": "U123,U456"}),
     ]
+
+
+def test_msteams_client_missing_webhook_names_environment_variable(monkeypatch) -> None:
+    monkeypatch.delenv("MSTEAMS_WEBHOOK_INCIDENT", raising=False)
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Missing Microsoft Teams Workflow webhook URL. "
+            "Set MSTEAMS_WEBHOOK_INCIDENT."
+        ),
+    ):
+        MSTeamsClient("MSTEAMS_WEBHOOK_INCIDENT")
+
+
+def test_msteams_client_posts_adaptive_card(monkeypatch) -> None:
+    requests: list[tuple[Request, int]] = []
+
+    def fake_urlopen(request: Request, timeout: int) -> FakeHTTPResponse:
+        requests.append((request, timeout))
+        return FakeHTTPResponse()
+
+    monkeypatch.setenv("MSTEAMS_WEBHOOK_INCIDENT", "https://example.test/workflow")
+    monkeypatch.setattr("emberpost.msteams.urlopen", fake_urlopen)
+
+    MSTeamsClient("MSTEAMS_WEBHOOK_INCIDENT").post_message("INCIDENT\nOn Call: User")
+
+    request, timeout = requests[0]
+    assert timeout == 30
+    assert request.full_url == "https://example.test/workflow"
+    assert request.get_header("Content-type") == "application/json"
+    assert isinstance(request.data, bytes)
+    payload = json.loads(request.data)
+    assert payload["type"] == "message"
+    assert payload["attachments"][0]["contentUrl"] is None
+    assert payload["attachments"][0]["content"]["body"] == [
+        {"type": "TextBlock", "text": "INCIDENT\nOn Call: User", "wrap": True}
+    ]
+
+
+def test_msteams_client_rejects_unsuccessful_response(monkeypatch) -> None:
+    monkeypatch.setenv("MSTEAMS_WEBHOOK_INCIDENT", "https://example.test/workflow")
+    monkeypatch.setattr(
+        "emberpost.msteams.urlopen",
+        lambda request, timeout: FakeHTTPResponse(status=500),
+    )
+
+    with pytest.raises(RuntimeError, match="Microsoft Teams webhook returned HTTP 500"):
+        MSTeamsClient("MSTEAMS_WEBHOOK_INCIDENT").post_message("On Call: User")

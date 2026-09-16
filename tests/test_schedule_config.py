@@ -5,15 +5,33 @@ import pytest
 import yaml
 
 from emberpost.schedule_config import (
+    DestinationProviderName,
+    MSTeamsProviderOptions,
     ScheduleConfig,
+    SlackProviderOptions,
     _load_schedule_schema,
     load_schedule,
     validate_schedule_schema,
 )
+from tests.support import msteams_destination, slack_destination
 
 
 def schedule_paths() -> list[Path]:
+    """Return checked-in schedule and example YAML paths."""
     return sorted([*Path("schedules").glob("*.yaml"), *Path("examples").glob("*.yaml")])
+
+
+def schedule_dict(*, destination: dict[str, object] | None = None) -> dict:
+    """Return a minimal schedule configuration dictionary."""
+    return {
+        "id": "test",
+        "schedule": "weekly",
+        "destination": destination or slack_destination(),
+        "pagerduty_tenant": "example.pagerduty.com",
+        "schedule_groups": {
+            "TEAM": {"entries": [{"schedule_id": "P1", "label": "Primary"}]}
+        },
+    }
 
 
 def test_load_schedule_file() -> None:
@@ -21,7 +39,7 @@ def test_load_schedule_file() -> None:
 
     assert config.id == "oncall"
     assert config.schedule == "weekly"
-    assert len(config.pagerduty.schedule_groups["Platform Coverage"].entries) == 2
+    assert len(config.schedule_groups["Platform Coverage"].entries) == 2
 
 
 def test_load_example_schedule_files() -> None:
@@ -38,200 +56,114 @@ def test_schedule_files_match_json_schema() -> None:
 
 
 def test_json_schema_rejects_empty_schedule_group() -> None:
-    schema = _load_schedule_schema()
+    config = schedule_dict()
+    config["schedule_groups"]["TEAM"]["entries"] = []
 
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate(
-            {
-                "id": "empty-group",
-                "schedule": "weekly",
-                "pagerduty": {
-                    "tenant": "example.pagerduty.com",
-                    "schedule_groups": {"EMPTY": {"entries": []}},
-                },
-                "slack": {
-                    "slack_space": "example.slack.com",
-                    "slack_channel_id": "C123",
-                },
-            },
-            schema,
-        )
+        validate_schedule_schema(config)
 
 
-def test_json_schema_rejects_swap_on_odd_weeks_without_exactly_two_entries() -> None:
-    schema = _load_schedule_schema()
+def test_json_schema_rejects_swap_without_exactly_two_entries() -> None:
+    config = schedule_dict()
+    config["schedule_groups"]["TEAM"].update(
+        {
+            "swap_on_odd_weeks": True,
+            "entries": [
+                {"schedule_id": "P1", "label": "First"},
+                {"schedule_id": "P2", "label": "Second"},
+                {"schedule_id": "P3", "label": "Third"},
+            ],
+        }
+    )
 
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate(
-            {
-                "id": "bad-swap",
-                "schedule": "weekly",
-                "pagerduty": {
-                    "tenant": "example.pagerduty.com",
-                    "schedule_groups": {
-                        "TEAM": {
-                            "swap_on_odd_weeks": True,
-                            "entries": [
-                                {"schedule_id": "P1", "label": "First"},
-                                {"schedule_id": "P2", "label": "Second"},
-                                {"schedule_id": "P3", "label": "Third"},
-                            ],
-                        }
-                    },
-                },
-                "slack": {
-                    "slack_space": "example.slack.com",
-                    "slack_channel_id": "C123",
-                },
-            },
-            schema,
-        )
+        validate_schedule_schema(config)
 
 
-def test_runtime_schema_validation_rejects_empty_schedule_group() -> None:
+def test_json_schema_rejects_legacy_slack_configuration() -> None:
+    config = schedule_dict()
+    config["slack"] = {"slack_space": "example.slack.com", "slack_channel_id": "C123"}
+    del config["destination"]
+
     with pytest.raises(jsonschema.ValidationError):
-        validate_schedule_schema(
-            {
-                "id": "empty-group",
-                "schedule": "weekly",
-                "pagerduty": {
-                    "tenant": "example.pagerduty.com",
-                    "schedule_groups": {"EMPTY": {"entries": []}},
-                },
-                "slack": {
-                    "slack_space": "example.slack.com",
-                    "slack_channel_id": "C123",
-                },
+        validate_schedule_schema(config)
+
+
+def test_json_schema_rejects_provider_options_for_another_provider() -> None:
+    config = schedule_dict(
+        destination={
+            "provider": {
+                "name": "msteams",
+                "options": {"space": "example.slack.com", "channel_id": "C123"},
             }
-        )
+        }
+    )
+
+    with pytest.raises(jsonschema.ValidationError):
+        validate_schedule_schema(config)
 
 
 def test_schedule_schema_is_cached() -> None:
     assert _load_schedule_schema() is _load_schedule_schema()
 
 
-def test_schedule_supports_many_goalies() -> None:
-    config = ScheduleConfig.from_dict(
-        {
-            "id": "many-goalies",
-            "schedule": "weekly",
-            "pagerduty": {
-                "tenant": "example.pagerduty.com",
-                "schedule_groups": {
-                    "TEAM": {
-                        "entries": [
-                            {"schedule_id": f"P{i}", "label": f"Goalie {i}"}
-                            for i in range(10)
-                        ]
-                    }
-                },
-            },
-            "slack": {"slack_space": "example.slack.com", "slack_channel_id": "C123"},
-        }
+def test_schedule_parses_slack_provider_options() -> None:
+    config = ScheduleConfig.from_dict(schedule_dict())
+
+    assert config.destination.provider.name is DestinationProviderName.slack
+    assert config.destination.provider.options == SlackProviderOptions(
+        space="example.slack.com", channel_id="C123", set_channel_topic=False
     )
 
-    assert len(config.pagerduty.schedule_groups["TEAM"].entries) == 10
 
-
-def test_schedule_group_supports_slack_group_id() -> None:
+def test_schedule_parses_msteams_provider_options() -> None:
     config = ScheduleConfig.from_dict(
-        {
-            "id": "group-sync",
-            "schedule": "weekly",
-            "pagerduty": {
-                "tenant": "example.pagerduty.com",
-                "schedule_groups": {
-                    "TEAM": {
-                        "slack_group_id": "S123",
-                        "entries": [
-                            {"schedule_id": "P1", "label": "Primary"},
-                            {"schedule_id": "P2", "label": "Secondary"},
-                        ],
-                    }
-                },
-            },
-            "slack": {"slack_space": "example.slack.com", "slack_channel_id": "C123"},
-        }
+        schedule_dict(destination=msteams_destination("MSTEAMS_WEBHOOK_ONCALL"))
     )
 
-    group = config.pagerduty.schedule_groups["TEAM"]
-    assert group.slack_group_id == "S123"
-    assert [entry.label for entry in group.entries] == ["Primary", "Secondary"]
-
-
-def test_schedule_group_supports_swap_on_odd_weeks() -> None:
-    config = ScheduleConfig.from_dict(
-        {
-            "id": "group-swap",
-            "schedule": "weekly",
-            "pagerduty": {
-                "tenant": "example.pagerduty.com",
-                "schedule_groups": {
-                    "TEAM": {
-                        "swap_on_odd_weeks": True,
-                        "entries": [
-                            {"schedule_id": "P1", "label": "Primary"},
-                            {"schedule_id": "P2", "label": "Secondary"},
-                        ],
-                    }
-                },
-            },
-            "slack": {"slack_space": "example.slack.com", "slack_channel_id": "C123"},
-        }
+    assert config.destination.provider.name is DestinationProviderName.msteams
+    assert config.destination.provider.options == MSTeamsProviderOptions(
+        webhook_env="MSTEAMS_WEBHOOK_ONCALL"
     )
 
-    assert config.pagerduty.schedule_groups["TEAM"].swap_on_odd_weeks is True
+
+def test_schedule_group_inherits_default_destination() -> None:
+    config = ScheduleConfig.from_dict(schedule_dict())
+    group = config.schedule_groups["TEAM"]
+
+    assert group.resolve_destination(config.destination) == config.destination
 
 
-def test_schedule_group_inherits_default_slack_config() -> None:
-    config = ScheduleConfig.from_dict(
-        {
-            "id": "default-destination",
-            "schedule": "weekly",
-            "pagerduty": {
-                "tenant": "example.pagerduty.com",
-                "schedule_groups": {
-                    "TEAM": {"entries": [{"schedule_id": "P1", "label": "Primary"}]}
-                },
-            },
-            "slack": {
-                "slack_space": "example.slack.com",
-                "slack_channel_id": "C123",
-                "set_channel_topic": True,
-            },
-        }
+def test_schedule_group_completely_overrides_default_destination() -> None:
+    raw_config = schedule_dict()
+    raw_config["schedule_groups"]["TEAM"]["destination"] = msteams_destination(
+        "MSTEAMS_WEBHOOK_TEAM"
     )
 
-    group = config.pagerduty.schedule_groups["TEAM"]
+    config = ScheduleConfig.from_dict(raw_config)
+    destination = config.schedule_groups["TEAM"].resolve_destination(config.destination)
 
-    assert group.resolve_slack_config(config.slack) == config.slack
-
-
-def test_schedule_group_overrides_individual_slack_config_values() -> None:
-    config = ScheduleConfig.from_dict(
-        {
-            "id": "overridden-destination",
-            "schedule": "weekly",
-            "pagerduty": {
-                "tenant": "example.pagerduty.com",
-                "schedule_groups": {
-                    "TEAM": {
-                        "slack_channel_id": "C456",
-                        "set_channel_topic": False,
-                        "entries": [{"schedule_id": "P1", "label": "Primary"}],
-                    }
-                },
-            },
-            "slack": {
-                "slack_space": "example.slack.com",
-                "slack_channel_id": "C123",
-                "set_channel_topic": True,
-            },
-        }
+    assert destination.provider.name is DestinationProviderName.msteams
+    assert destination.provider.options == MSTeamsProviderOptions(
+        webhook_env="MSTEAMS_WEBHOOK_TEAM"
     )
 
-    slack = config.pagerduty.schedule_groups["TEAM"].resolve_slack_config(config.slack)
 
-    assert slack.slack_space == "example.slack.com"
-    assert slack.slack_channel_id == "C456"
-    assert slack.set_channel_topic is False
+def test_schedule_group_can_override_msteams_default_with_slack() -> None:
+    raw_config = schedule_dict(destination=msteams_destination())
+    raw_config["schedule_groups"]["TEAM"].update(
+        {"destination": slack_destination(), "slack_group_id": "S123"}
+    )
+
+    config = ScheduleConfig.from_dict(raw_config)
+    destination = config.schedule_groups["TEAM"].resolve_destination(config.destination)
+
+    assert destination.provider.name is DestinationProviderName.slack
+
+
+def test_schedule_rejects_slack_group_for_msteams_destination() -> None:
+    raw_config = schedule_dict(destination=msteams_destination())
+    raw_config["schedule_groups"]["TEAM"]["slack_group_id"] = "S123"
+
+    with pytest.raises(ValueError, match="effective destination provider is not slack"):
+        ScheduleConfig.from_dict(raw_config)

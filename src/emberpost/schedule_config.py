@@ -20,6 +20,13 @@ class Frequency(StrEnum):
     manual = "manual"
 
 
+class DestinationProviderName(StrEnum):
+    """Supported notification destination providers."""
+
+    slack = "slack"
+    msteams = "msteams"
+
+
 @dataclass(frozen=True)
 class PagerDutyScheduleEntry:
     """One labeled PagerDuty schedule to resolve."""
@@ -29,79 +36,103 @@ class PagerDutyScheduleEntry:
 
     @classmethod
     def from_dict(cls, config: dict) -> "PagerDutyScheduleEntry":
+        """Create a schedule entry from validated configuration."""
         return cls(schedule_id=config["schedule_id"], label=config["label"])
 
 
 @dataclass(frozen=True)
-class SlackConfig:
-    """Effective Slack workspace, channel, and delivery mode."""
+class SlackProviderOptions:
+    """Slack workspace, channel, and delivery mode."""
 
-    slack_space: str
-    slack_channel_id: str
+    space: str
+    channel_id: str
     set_channel_topic: bool = False
 
     @classmethod
-    def from_dict(cls, config: dict) -> "SlackConfig":
+    def from_dict(cls, config: dict) -> "SlackProviderOptions":
+        """Create Slack provider options from validated configuration."""
         return cls(
-            slack_space=config["slack_space"],
-            slack_channel_id=config["slack_channel_id"],
+            space=config["space"],
+            channel_id=config["channel_id"],
             set_channel_topic=config.get("set_channel_topic", False),
         )
 
 
 @dataclass(frozen=True)
+class MSTeamsProviderOptions:
+    """Microsoft Teams Workflows webhook configuration."""
+
+    webhook_env: str
+
+    @classmethod
+    def from_dict(cls, config: dict) -> "MSTeamsProviderOptions":
+        """Create Teams provider options from validated configuration."""
+        return cls(webhook_env=config["webhook_env"])
+
+
+DestinationProviderOptions = SlackProviderOptions | MSTeamsProviderOptions
+
+
+@dataclass(frozen=True)
+class DestinationProvider:
+    """Named provider and its provider-specific options."""
+
+    name: DestinationProviderName
+    options: DestinationProviderOptions
+
+    @classmethod
+    def from_dict(cls, config: dict) -> "DestinationProvider":
+        """Create a destination provider from validated configuration."""
+        name = DestinationProviderName(config["name"])
+        if name is DestinationProviderName.slack:
+            options: DestinationProviderOptions = SlackProviderOptions.from_dict(
+                config["options"]
+            )
+        else:
+            options = MSTeamsProviderOptions.from_dict(config["options"])
+        return cls(name=name, options=options)
+
+
+@dataclass(frozen=True)
+class Destination:
+    """Notification destination for one or more schedule groups."""
+
+    provider: DestinationProvider
+
+    @classmethod
+    def from_dict(cls, config: dict) -> "Destination":
+        """Create a destination from validated configuration."""
+        return cls(provider=DestinationProvider.from_dict(config["provider"]))
+
+
+@dataclass(frozen=True)
 class PagerDutyScheduleGroup:
-    """A named schedule group with optional Slack destination overrides."""
+    """A named schedule group with an optional destination override."""
 
     entries: list[PagerDutyScheduleEntry]
+    destination: Destination | None = None
     slack_group_id: str | None = None
-    slack_space: str | None = None
-    slack_channel_id: str | None = None
-    set_channel_topic: bool | None = None
     swap_on_odd_weeks: bool = False
 
     @classmethod
     def from_dict(cls, config: dict) -> "PagerDutyScheduleGroup":
+        """Create a schedule group from validated configuration."""
         return cls(
             entries=[
                 PagerDutyScheduleEntry.from_dict(entry) for entry in config["entries"]
             ],
+            destination=(
+                Destination.from_dict(config["destination"])
+                if "destination" in config
+                else None
+            ),
             slack_group_id=config.get("slack_group_id"),
-            slack_space=config.get("slack_space"),
-            slack_channel_id=config.get("slack_channel_id"),
-            set_channel_topic=config.get("set_channel_topic"),
             swap_on_odd_weeks=config.get("swap_on_odd_weeks", False),
         )
 
-    def resolve_slack_config(self, default: SlackConfig) -> SlackConfig:
-        """Return this group's effective Slack destination."""
-        return SlackConfig(
-            slack_space=self.slack_space or default.slack_space,
-            slack_channel_id=self.slack_channel_id or default.slack_channel_id,
-            set_channel_topic=(
-                self.set_channel_topic
-                if self.set_channel_topic is not None
-                else default.set_channel_topic
-            ),
-        )
-
-
-@dataclass(frozen=True)
-class PagerDutyConfig:
-    """PagerDuty tenant and named schedule groups."""
-
-    tenant: str
-    schedule_groups: dict[str, PagerDutyScheduleGroup]
-
-    @classmethod
-    def from_dict(cls, config: dict) -> "PagerDutyConfig":
-        return cls(
-            tenant=config["tenant"],
-            schedule_groups={
-                group_name: PagerDutyScheduleGroup.from_dict(group)
-                for group_name, group in config["schedule_groups"].items()
-            },
-        )
+    def resolve_destination(self, default: Destination) -> Destination:
+        """Return this group's override or the schedule default destination."""
+        return self.destination or default
 
 
 @dataclass(frozen=True)
@@ -110,23 +141,44 @@ class ScheduleConfig:
 
     id: str
     schedule: Frequency
-    pagerduty: PagerDutyConfig
-    slack: SlackConfig
+    destination: Destination
+    pagerduty_tenant: str
+    schedule_groups: dict[str, PagerDutyScheduleGroup]
     suspended: bool = False
     message_header: str | None = None
     message_footer: str | None = None
 
     @classmethod
     def from_dict(cls, config: dict) -> "ScheduleConfig":
-        return cls(
+        """Create and validate runtime configuration from a dictionary."""
+        schedule_config = cls(
             id=config["id"],
             schedule=Frequency(config["schedule"]),
+            destination=Destination.from_dict(config["destination"]),
+            pagerduty_tenant=config["pagerduty_tenant"],
+            schedule_groups={
+                group_name: PagerDutyScheduleGroup.from_dict(group)
+                for group_name, group in config["schedule_groups"].items()
+            },
             suspended=config.get("suspended", False),
-            pagerduty=PagerDutyConfig.from_dict(config["pagerduty"]),
-            slack=SlackConfig.from_dict(config["slack"]),
             message_header=config.get("message_header"),
             message_footer=config.get("message_footer"),
         )
+        schedule_config._validate_provider_rules()
+        return schedule_config
+
+    def _validate_provider_rules(self) -> None:
+        """Validate rules that depend on an inherited destination."""
+        for group_name, group in self.schedule_groups.items():
+            destination = group.resolve_destination(self.destination)
+            if (
+                group.slack_group_id is not None
+                and destination.provider.name is not DestinationProviderName.slack
+            ):
+                raise ValueError(
+                    f"Schedule group {group_name!r} sets slack_group_id but its "
+                    "effective destination provider is not slack"
+                )
 
 
 def load_schedule(path: Path) -> ScheduleConfig:
