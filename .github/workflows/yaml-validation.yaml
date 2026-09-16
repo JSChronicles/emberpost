@@ -29,5 +29,17 @@ jobs:
       - name: Install the project
         run: uv sync --all-groups
 
-      - name: Validate schedule YAML files against JSON Schema
-        run: uv run check-jsonschema --schemafile schemas/schedule.schema.json schedules/*.yaml examples/*.yaml
+      - name: Validate schedule YAML files against packaged JSON Schema
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+
+          from emberpost.schedule_config import load_schedule
+
+          config_paths = sorted(
+              [*Path("schedules").glob("*.yaml"), *Path("examples").glob("*.yaml")]
+          )
+          for config_path in config_paths:
+              load_schedule(config_path)
+              print(f"validated {config_path}")
+          PY
