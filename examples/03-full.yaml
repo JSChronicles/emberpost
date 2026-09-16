@@ -18,6 +18,8 @@ pagerduty:
           label: "Deploy Support"
     DATABASE:
       slack_group_id: S9876543210
+      slack_channel_id: C0987654321
+      set_channel_topic: true
       swap_on_odd_weeks: true
       entries:
         - schedule_id: PEXAMPLE4

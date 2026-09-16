@@ -7,16 +7,22 @@ import pagerduty
 
 @dataclass(frozen=True)
 class PagerDutyOnCall:
+    """Resolved PagerDuty on-call identity."""
+
     email: str
     name: str
 
 
 class PagerDutyClient:
+    """Tenant-scoped adapter for PagerDuty on-call resolution."""
+
     def __init__(self, tenant: str) -> None:
+        """Initialize a PagerDuty client using the tenant-specific API key."""
         self.tenant = tenant
         self.client = pagerduty.RestApiV2Client(self._api_key())
 
     def get_oncalls(self, schedule_ids: list[str]) -> dict[str, PagerDutyOnCall]:
+        """Return the earliest current on-call identity for each schedule."""
         if not schedule_ids:
             return {}
 

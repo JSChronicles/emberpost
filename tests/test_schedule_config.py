@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import jsonschema
@@ -7,6 +6,7 @@ import yaml
 
 from emberpost.schedule_config import (
     ScheduleConfig,
+    _load_schedule_schema,
     load_schedule,
     validate_schedule_schema,
 )
@@ -30,7 +30,7 @@ def test_load_example_schedule_files() -> None:
 
 
 def test_schedule_files_match_json_schema() -> None:
-    schema = json.loads(Path("schemas/schedule.schema.json").read_text())
+    schema = _load_schedule_schema()
 
     for schedule_path in schedule_paths():
         config = yaml.safe_load(schedule_path.read_text())
@@ -38,7 +38,7 @@ def test_schedule_files_match_json_schema() -> None:
 
 
 def test_json_schema_rejects_empty_schedule_group() -> None:
-    schema = json.loads(Path("schemas/schedule.schema.json").read_text())
+    schema = _load_schedule_schema()
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(
@@ -59,7 +59,7 @@ def test_json_schema_rejects_empty_schedule_group() -> None:
 
 
 def test_json_schema_rejects_swap_on_odd_weeks_without_exactly_two_entries() -> None:
-    schema = json.loads(Path("schemas/schedule.schema.json").read_text())
+    schema = _load_schedule_schema()
 
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(
@@ -104,6 +104,10 @@ def test_runtime_schema_validation_rejects_empty_schedule_group() -> None:
                 },
             }
         )
+
+
+def test_schedule_schema_is_cached() -> None:
+    assert _load_schedule_schema() is _load_schedule_schema()
 
 
 def test_schedule_supports_many_goalies() -> None:
@@ -177,3 +181,57 @@ def test_schedule_group_supports_swap_on_odd_weeks() -> None:
     )
 
     assert config.pagerduty.schedule_groups["TEAM"].swap_on_odd_weeks is True
+
+
+def test_schedule_group_inherits_default_slack_config() -> None:
+    config = ScheduleConfig.from_dict(
+        {
+            "id": "default-destination",
+            "schedule": "weekly",
+            "pagerduty": {
+                "tenant": "example.pagerduty.com",
+                "schedule_groups": {
+                    "TEAM": {"entries": [{"schedule_id": "P1", "label": "Primary"}]}
+                },
+            },
+            "slack": {
+                "slack_space": "example.slack.com",
+                "slack_channel_id": "C123",
+                "set_channel_topic": True,
+            },
+        }
+    )
+
+    group = config.pagerduty.schedule_groups["TEAM"]
+
+    assert group.resolve_slack_config(config.slack) == config.slack
+
+
+def test_schedule_group_overrides_individual_slack_config_values() -> None:
+    config = ScheduleConfig.from_dict(
+        {
+            "id": "overridden-destination",
+            "schedule": "weekly",
+            "pagerduty": {
+                "tenant": "example.pagerduty.com",
+                "schedule_groups": {
+                    "TEAM": {
+                        "slack_channel_id": "C456",
+                        "set_channel_topic": False,
+                        "entries": [{"schedule_id": "P1", "label": "Primary"}],
+                    }
+                },
+            },
+            "slack": {
+                "slack_space": "example.slack.com",
+                "slack_channel_id": "C123",
+                "set_channel_topic": True,
+            },
+        }
+    )
+
+    slack = config.pagerduty.schedule_groups["TEAM"].resolve_slack_config(config.slack)
+
+    assert slack.slack_space == "example.slack.com"
+    assert slack.slack_channel_id == "C456"
+    assert slack.set_channel_topic is False

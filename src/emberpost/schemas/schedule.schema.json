@@ -13,6 +13,26 @@
       "title": "Frequency",
       "type": "string"
     },
+    "SlackSpace": {
+      "examples": [
+        "business.slack.com"
+      ],
+      "pattern": "^[A-Za-z0-9.-]+\\.slack\\.com$",
+      "title": "Slack Space",
+      "type": "string"
+    },
+    "SlackChannelId": {
+      "examples": [
+        "C09K68TPB7X"
+      ],
+      "minLength": 1,
+      "title": "Slack Channel Id",
+      "type": "string"
+    },
+    "SetChannelTopic": {
+      "title": "Set Channel Topic",
+      "type": "boolean"
+    },
     "PagerDutyConfig": {
       "additionalProperties": false,
       "properties": {
@@ -84,6 +104,21 @@
           ],
           "title": "Slack Group Id"
         },
+        "slack_space": {
+          "$ref": "#/$defs/SlackSpace",
+          "description": "Optional Slack workspace hostname override for this schedule group. Defaults to the top-level slack.slack_space value."
+        },
+        "slack_channel_id": {
+          "$ref": "#/$defs/SlackChannelId",
+          "description": "Optional Slack channel ID override for this schedule group. Defaults to the top-level slack.slack_channel_id value."
+        },
+        "set_channel_topic": {
+          "$ref": "#/$defs/SetChannelTopic",
+          "description": "Optional channel topic behavior override for this schedule group. Defaults to the top-level slack.set_channel_topic value.",
+          "examples": [
+            true
+          ]
+        },
         "swap_on_odd_weeks": {
           "default": false,
           "description": "When true, swap the two entries in this group during odd ISO week numbers. Only valid when the group has exactly two entries.",
@@ -142,28 +177,17 @@
       "additionalProperties": false,
       "properties": {
         "slack_space": {
-          "description": "Slack workspace hostname. This maps to an environment variable named SLACK_API_KEY_<WORKSPACE>, with dots replaced by underscores.",
-          "examples": [
-            "business.slack.com"
-          ],
-          "pattern": "^[A-Za-z0-9.-]+\\.slack\\.com$",
-          "title": "Slack Space",
-          "type": "string"
+          "$ref": "#/$defs/SlackSpace",
+          "description": "Slack workspace hostname. This maps to an environment variable named SLACK_API_KEY_<WORKSPACE>, with dots replaced by underscores."
         },
         "slack_channel_id": {
-          "description": "Slack channel ID to update or post to.",
-          "examples": [
-            "C09K68TPB7X"
-          ],
-          "minLength": 1,
-          "title": "Slack Channel Id",
-          "type": "string"
+          "$ref": "#/$defs/SlackChannelId",
+          "description": "Slack channel ID to update or post to."
         },
         "set_channel_topic": {
+          "$ref": "#/$defs/SetChannelTopic",
           "default": false,
-          "description": "When true, update the Slack channel topic. When false, post a normal Slack channel message.",
-          "title": "Set Channel Topic",
-          "type": "boolean"
+          "description": "When true, update the Slack channel topic. When false, post a normal Slack channel message."
         }
       },
       "required": [
