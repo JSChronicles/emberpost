@@ -1,10 +1,6 @@
 name: "Publish"
 
 on:
-  push:
-    tags:
-      - v*
-
   workflow_dispatch:
     inputs:
       tag:
@@ -32,6 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ inputs.tag || github.ref }}
 
       - name: Install uv
@@ -40,9 +37,20 @@ jobs:
       - name: Build
         run: uv build
 
-      # Check that basic features work and we didn't miss to include crucial files
-      # - name: Smoke test (wheel)
-      #   run: uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
+      - name: Smoke test wheel
+        shell: bash
+        run: |
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if (( ${#wheels[@]} != 1 )); then
+            echo "::error::expected exactly one wheel in dist, found ${#wheels[@]}"
+            exit 1
+          fi
+
+          uv run --isolated --no-project --python 3.14 --with "${wheels[0]}" \
+            emberpost --version
+          uv run --isolated --no-project --python 3.14 --with "${wheels[0]}" \
+            python -c 'from pathlib import Path; from emberpost.schedule_config import load_schedule; load_schedule(Path("examples/01-minimal.yaml"))'
 
       # - name: Smoke test (source distribution)
       #   run: uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py

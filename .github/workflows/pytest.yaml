@@ -30,10 +30,10 @@ jobs:
       - name: Build package
         run: uv build
 
-      - name: Smoke test module entrypoint
-        env:
-          PYTHONPATH: src
-        run: uv run python -m emberpost.post --help
+      - name: Smoke test CLI entrypoint
+        run: |
+          uv run emberpost --help
+          uv run emberpost --version
 
       - name: Set PYTHONPATH
         run: echo "PYTHONPATH=$(pwd)" >> $GITHUB_ENV
