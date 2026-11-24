@@ -26,9 +26,9 @@ classifiers = [
 ]
 dependencies = [
   "jsonschema>=4.26.0,<4.30.0",
-  "pagerduty>=7.0.1",
+  "pagerduty>=7.2.0",
   "pyyaml>=6.0.3",
-  "slack-sdk>=3.44.1",
+  "slack-sdk>=3.47.0",
 ]
 
 [project.urls]
@@ -43,10 +43,10 @@ emberpost = "emberpost.cli:main"
 [dependency-groups]
 dev = [
   "pytest-cov>=7.1.0,<8.0.0",
-  "pytest>=9.1.1,<10.0.0",
-  "prek>=0.4.12,<0.6.0",
-  "ruff>=0.16.0,<0.20.0",
-  "ty>=0.0.60,<0.20.0",
+  "pytest>=9.2.0,<10.0.0",
+  "prek>=0.5.11,<0.6.0",
+  "ruff>=0.17.5,<0.20.0",
+  "ty>=0.0.104,<0.20.0",
 ]
 
 [tool.pytest.ini_options]

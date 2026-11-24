@@ -101,18 +101,18 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jsonschema", specifier = ">=4.26.0,<4.30.0" },
-    { name = "pagerduty", specifier = ">=7.0.1" },
+    { name = "pagerduty", specifier = ">=7.2.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "slack-sdk", specifier = ">=3.44.1" },
+    { name = "slack-sdk", specifier = ">=3.47.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "prek", specifier = ">=0.4.12,<0.6.0" },
-    { name = "pytest", specifier = ">=9.1.1,<10.0.0" },
+    { name = "prek", specifier = ">=0.5.11,<0.6.0" },
+    { name = "pytest", specifier = ">=9.2.0,<10.0.0" },
     { name = "pytest-cov", specifier = ">=7.1.0,<8.0.0" },
-    { name = "ruff", specifier = ">=0.16.0,<0.20.0" },
-    { name = "ty", specifier = ">=0.0.60,<0.20.0" },
+    { name = "ruff", specifier = ">=0.17.5,<0.20.0" },
+    { name = "ty", specifier = ">=0.0.104,<0.20.0" },
 ]
 
 [[package]]
