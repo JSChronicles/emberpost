@@ -1,9 +1,12 @@
+# Full example showing a default Slack destination, per-group Slack and Teams
+# overrides, Slack user-group updates, and alternating entry labels.
 id: full-oncall
 schedule: weekly
 suspended: false
 message_header: "Current on-call rotation"
 message_footer: "Escalate in PagerDuty if immediate help is needed."
 
+# Default destination for groups that do not define their own.
 destination:
   provider:
     name: slack
@@ -16,6 +19,7 @@ pagerduty_tenant: example.pagerduty.com
 
 schedule_groups:
   PLATFORM:
+    # Uses the top-level destination above.
     slack_group_id: S0123456789
     entries:
       - schedule_id: PEXAMPLE1
@@ -26,6 +30,7 @@ schedule_groups:
         label: "Deploy Support"
   DATABASE:
     slack_group_id: S9876543210
+    # Replaces the default top-level destination for this group.
     destination:
       provider:
         name: slack
